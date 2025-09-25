@@ -81,16 +81,40 @@ combined_data <- combined_data |>
   )
 
 ## Specifying the Bayesian regression
-## PM25
 
 fit <- brm(
   formula = pm25 ~ temp_s + rh_s, 
   data = combined_data, 
   family = gaussian(), 
   prior = c(
-    prior(normal(0,5), class = "b"),
-    prior(normal(0,10), class = "Intercept"),
-    prior(exponential(1), class = "sigma")
-  )
-  
+    prior(normal(0,5), class = "b"),    # for slope
+    prior(normal(0,10), class = "Intercept"), # for intercept
+    prior(exponential(1), class = "sigma") # for residual SD
+  ), 
+  chains = 4,
+  cores = 4, 
+  iter = 4000
 )
+
+summary(fit)
+
+## Visualizing the posterior plots (basic level)
+
+plot(fit)
+
+pp_check(fit) # this compares obs vs. predic PM2.5
+
+## Plotting the posterior samples (manual level)
+
+posterior_long <- posterior_samples(fit) |> 
+  pivot_longer(
+    cols = everything(), 
+    names_to = "Parameter", 
+    values_to = "Value")
+
+ggplot(posterior_long, aes(x = Value , fill = Parameter)) + 
+  geom_density(alpha = 0.6) + 
+  facet_wrap(~Parameter, scales = "free") + 
+  theme_minimal() +
+  labs(title = "Posterior Distributions", 
+       x = "Parameter Value", y = "Density")
