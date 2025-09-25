@@ -104,7 +104,7 @@ plot(fit)
 
 pp_check(fit) # this compares obs vs. predic PM2.5
 
-## Plotting the posterior samples (manual level)
+## Pivoting my plot longer
 
 posterior_long <- posterior_samples(fit) |> 
   pivot_longer(
@@ -112,9 +112,28 @@ posterior_long <- posterior_samples(fit) |>
     names_to = "Parameter", 
     values_to = "Value")
 
-ggplot(posterior_long, aes(x = Value , fill = Parameter)) + 
+## Computing 95% credible intervals
+
+ci_df <- posterior_long |> 
+  group_by(Parameter) |> 
+  summarise(
+    lower = quantile(Value, 0.025), 
+    upper = quantile(Value, 0.975), 
+    .groups = "drop"
+  )
+
+## Plotting the posterior samples (manual level)
+
+posterior_plot <- ggplot(posterior_long, aes(x = Value , fill = Parameter)) + 
   geom_density(alpha = 0.6) + 
+  geom_vline(data = ci_df, aes(xintercept = lower), 
+             linetype = "dashed", 
+             color = "red") + 
+  geom_vline(data = ci_df, aes(xintercept = upper), 
+             linetype = "dashed",
+             color = "red") +
   facet_wrap(~Parameter, scales = "free") + 
   theme_minimal() +
-  labs(title = "Posterior Distributions", 
+  labs(title = "Posterior Distributions of PM 2.5 with 95% Credible Intervals", 
        x = "Parameter Value", y = "Density")
+
