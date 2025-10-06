@@ -1,6 +1,6 @@
 ## Bayesian inferences from PM 2.5 data taken from
 ## Lower East Side, Manhattan
-## Maya Arnott 09/24/2025
+## Maya Arnott
 
 ## importing libraries
 library(ggplot2)
@@ -98,11 +98,13 @@ combined_data <- combined_data |>
 ## scale my data
 
 combined_data <- combined_data |> 
+  ungroup () |> 
   mutate(
+    date = as.factor(date),
+    # transform hour to a cyclic variable
+    hour = 2 * pi * hour / 24,
     temp_s = scale(temp)[,1],
     rh_s = scale(rh)[,1], 
-    # transform hour to a cyclic variable
-    hour = 2 * pi * hour / 24
   )
 
 # defining knots 
@@ -138,13 +140,19 @@ plot(fit)
 
 pp_check(fit) # this compares obs vs. prediction of PM2.5
 
-## pivoting my plot longer
+## pivoting my plot longer for fixed effects
 
-posterior_long <- posterior_samples(fit) |> 
+posterior_long <- as_draws_df(fit) |> 
   pivot_longer(
     cols = everything(), 
     names_to = "Parameter", 
-    values_to = "Value")
+    values_to = "Value"
+  )
+
+## filter out spline basis parameters
+
+posterior_fixed <- posterior_long |> 
+  filter(!grepl("^s\\(", Parameter))
 
 ## computing 95% credible intervals
 
@@ -158,7 +166,7 @@ ci_df <- posterior_long |>
 
 ## plotting the posterior samples (manual level)
 
-posterior_plot <- ggplot(posterior_long, aes(x = Value , fill = Parameter)) + 
+posterior_plot <- ggplot(posterior_fixed, aes(x = Value , fill = Parameter)) + 
   geom_density(alpha = 0.6) + 
   geom_vline(data = ci_df, aes(xintercept = lower), 
              linetype = "dashed", 
@@ -171,3 +179,49 @@ posterior_plot <- ggplot(posterior_long, aes(x = Value , fill = Parameter)) +
   labs(title = "Posterior Distributions of PM 2.5 with 95% Credible Intervals", 
        x = "Parameter Value", y = "Density")
 
+## visualizing the hourly/cyclic spline effect
+
+# creating a fine grid of hours for prediction
+hour_grid <- tibble(
+  hour = seq(0, 24, length.out = 100),
+  temp_s = 0,
+  rh_s = 0,
+  date = factor(1)  # add a dummy date to satisfy validate_data
+) |> 
+  mutate(hour = 2 * pi * hour / 24)
+
+# Compute posterior predicted values for the spline (population-level only)
+hour_effect <- posterior_linpred(fit, newdata = hour_grid, re_formula = NA)
+
+# pivot long
+hour_long <- as_tibble(hour_effect) |> 
+  pivot_longer(
+    cols = everything(),
+    names_to = "hour_index",
+    values_to = "pred"
+  ) |> 
+  mutate(
+    hour_index = as.integer(hour_index),          # convert to integer
+    hour = hour_grid$hour[hour_index]            # assign correct hour
+  )
+
+# Summarize mean and 95% credible intervals
+hour_summary <- as_tibble(hour_effect) |> 
+  mutate(hour = pull(hour_grid, hour)) |>   # adding hour column
+  summarise(
+    hour = hour, 
+    mean = apply(as.matrix(.), 2, mean),
+    lower = apply(as.matrix(.), 2, quantile, 0.025),
+    upper = apply(as.matrix(.), 2, quantile, 0.975)
+  )
+
+# Plot diurnal effect
+hour_plot <- ggplot(hour_summary, aes(x = hour, y = mean)) +
+  geom_line(color = "blue", size = 1) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, fill = "blue") +
+  theme_minimal() +
+  labs(title = "Estimated Diurnal (Hourly) Effect on PM2.5",
+       x = "Hour of Day", 
+       y = "PM2.5 effect")
+
+hour_plot
