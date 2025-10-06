@@ -28,7 +28,7 @@ les_temp_df =
 les_temp_df = 
   janitor::clean_names(les_temp_df)
 
-## Keeping only necessary columns
+## keeping only necessary columns
 ## select func allows me to select the columns i want to show
 
 pm25_data <- les_pm25_df |> 
@@ -40,19 +40,19 @@ rh_data <- les_rh_df |>
 temp_data <- les_temp_df |> 
   select(datetime_local, location_id, location_name, parameter, value)
 
-## Bind the rows in the 'parameter' column
+## bind the rows in the 'parameter' column
 
 all_data <- bind_rows(pm25_data, rh_data, temp_data)
 
-## Identifying duplicates
+## identifying duplicates
 
 duplicates <- all_data |> 
   group_by(datetime_local, location_id, location_name, parameter) |> 
   summarize(n = n(), .groups = "drop") |> 
   filter( n > 1 )
 
-## Pivot wider so the vars are in separate columns
-## Collapsed duplicates by averaging the 2 values
+## pivot wider so the vars are in separate columns
+## collapsed duplicates by averaging the 2 values
 
 combined_data <- all_data |>
   group_by(datetime_local, location_id, location_name, parameter) |> 
@@ -61,25 +61,30 @@ combined_data <- all_data |>
         .groups = "drop") |> 
   pivot_wider(names_from = parameter, values_from = value) |> 
   
-  # Extracting time variables
+  # extracting time variables
   mutate(
-    datetime = as.POSIXct(datetime_local, tz = "UTC"),
+    datetime = as.POSIXct(datetime_local, tz = "America/New_York"),
     date = as.Date(datetime),
     hour = as.numeric(format(datetime, "%H")),
-    month = format (datetime, "%m"),
+    month = format(datetime, "%m"),
     day = as.numeric(format(datetime, "%d"))
   ) |> 
-  #rename columns for consistency
+  # rename columns for consistency
   rename(
     id = location_id,
     name = location_name,
     pm25 = pm25,
     rh = relativehumidity,
     temp = temperature
-  ) 
+  ) |> 
+  # scale continuous predictors
+  mutate(
+    temp_s = scale(temp)[,1],
+    rh_s = scale(rh)[,1]
+  )
 
 
-## Renaming columns
+## renaming columns
 
 combined_data <- combined_data |> 
   rename(
@@ -90,20 +95,30 @@ combined_data <- combined_data |>
     temp = temperature
   )
 
-## Scale my data
+## scale my data
 
 combined_data <- combined_data |> 
   mutate(
     temp_s = scale(temp)[,1],
-    rh_s = scale(rh)[,1]
+    rh_s = scale(rh)[,1], 
+    # transform hour to a cyclic variable
+    hour = 2 * pi * hour / 24
   )
 
-## Specifying the Bayesian regression
+# defining knots 
+knots <- list(hour = c(0, 2 * pi))
+
+## specifying the Bayesian regression
 
 fit <- brm(
-  formula = pm25 ~ temp_s + rh_s, 
+  formula = 
+    bf(pm25 ~ temp_s + rh_s + s(hour, bs = "cc", k = 10),
+              # preventing divergent transitions
+              autocor = cor_ar( ~1 | date, p = 1)),
   data = combined_data, 
-  family = gaussian(), 
+  knots = knots,
+  family = gaussian(),
+  # to model within-day serial dependence
   prior = c(
     prior(normal(0,5), class = "b"),    # for slope
     prior(normal(0,10), class = "Intercept"), # for intercept
@@ -111,18 +126,19 @@ fit <- brm(
   ), 
   chains = 4,
   cores = 4, 
-  iter = 4000
+  iter = 4000,
+  control = list(adapt_delta = 0.99)
 )
 
 summary(fit)
 
-## Visualizing the posterior plots (basic level)
+## visualizing the posterior plots (basic level)
 
 plot(fit)
 
 pp_check(fit) # this compares obs vs. prediction of PM2.5
 
-## Pivoting my plot longer
+## pivoting my plot longer
 
 posterior_long <- posterior_samples(fit) |> 
   pivot_longer(
@@ -130,7 +146,7 @@ posterior_long <- posterior_samples(fit) |>
     names_to = "Parameter", 
     values_to = "Value")
 
-## Computing 95% credible intervals
+## computing 95% credible intervals
 
 ci_df <- posterior_long |> 
   group_by(Parameter) |> 
@@ -140,7 +156,7 @@ ci_df <- posterior_long |>
     .groups = "drop"
   )
 
-## Plotting the posterior samples (manual level)
+## plotting the posterior samples (manual level)
 
 posterior_plot <- ggplot(posterior_long, aes(x = Value , fill = Parameter)) + 
   geom_density(alpha = 0.6) + 
