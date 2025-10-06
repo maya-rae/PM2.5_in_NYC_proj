@@ -59,7 +59,25 @@ combined_data <- all_data |>
   summarise(value = 
         mean(value, na.rm = TRUE), 
         .groups = "drop") |> 
-  pivot_wider(names_from = parameter, values_from = value)
+  pivot_wider(names_from = parameter, values_from = value) |> 
+  
+  # Extracting time variables
+  mutate(
+    datetime = as.POSIXct(datetime_local, tz = "UTC"),
+    date = as.Date(datetime),
+    hour = as.numeric(format(datetime, "%H")),
+    month = format (datetime, "%m"),
+    day = as.numeric(format(datetime, "%d"))
+  ) |> 
+  #rename columns for consistency
+  rename(
+    id = location_id,
+    name = location_name,
+    pm25 = pm25,
+    rh = relativehumidity,
+    temp = temperature
+  ) 
+
 
 ## Renaming columns
 
@@ -102,7 +120,7 @@ summary(fit)
 
 plot(fit)
 
-pp_check(fit) # this compares obs vs. predic PM2.5
+pp_check(fit) # this compares obs vs. prediction of PM2.5
 
 ## Pivoting my plot longer
 
