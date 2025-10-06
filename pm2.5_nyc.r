@@ -66,8 +66,10 @@ combined_data <- all_data |>
     datetime = as.POSIXct(datetime_local, tz = "America/New_York"),
     date = as.Date(datetime),
     hour = as.numeric(format(datetime, "%H")),
-    month = format(datetime, "%m"),
-    day = as.numeric(format(datetime, "%d"))
+    month = factor(format(datetime, "%m"), 
+                  levels = sprintf("%02d", 1:12),
+                  labels = month.abb),
+    day = as.integer(format(datetime, "%d"))
   ) |> 
   # rename columns for consistency
   rename(
@@ -83,28 +85,14 @@ combined_data <- all_data |>
     rh_s = scale(rh)[,1]
   )
 
-
-## renaming columns
-
-combined_data <- combined_data |> 
-  rename(
-    id = location_id,
-    name = location_name,
-    pm25 = pm25, 
-    rh = relativehumidity,
-    temp = temperature
-  )
-
 ## scale my data
 
 combined_data <- combined_data |> 
-  ungroup () |> 
-  mutate(
+ungroup () |> 
+mutate(
     date = as.factor(date),
     # transform hour to a cyclic variable
     hour = 2 * pi * hour / 24,
-    temp_s = scale(temp)[,1],
-    rh_s = scale(rh)[,1], 
   )
 
 # defining knots 
@@ -113,10 +101,9 @@ knots <- list(hour = c(0, 2 * pi))
 ## specifying the Bayesian regression
 
 fit <- brm(
-  formula = 
-    bf(pm25 ~ temp_s + rh_s + s(hour, bs = "cc", k = 10),
-              # preventing divergent transitions
-              autocor = cor_ar( ~1 | date, p = 1)),
+  bf(pm25 ~ temp_s + rh_s + s(hour, bs = "cc", k = 10),
+    # preventing divergent transitions
+    autocor = cor_ar( ~1 | date, p = 1)),
   data = combined_data, 
   knots = knots,
   family = gaussian(),
@@ -129,7 +116,7 @@ fit <- brm(
   chains = 4,
   cores = 4, 
   iter = 4000,
-  control = list(adapt_delta = 0.99)
+  control = list(adapt_delta = 0.99, max_treedepth = 15)
 )
 
 summary(fit)
@@ -140,22 +127,26 @@ plot(fit)
 
 pp_check(fit) # this compares obs vs. prediction of PM2.5
 
-## pivoting my plot longer for fixed effects
+# Posterior distributions of parameters
 
-posterior_long <- as_draws_df(fit) |> 
+# selecting the parameter columns we want
+posterior_clean <- as_draws_df(fit) |> 
+  select(-c(.chain, .iteration, .draw)) |>       # remove MCMC bookkeeping
+  select(-matches("^sds_shour_"), 
+         -matches("^s_shour_"),
+         -matches("^lprior"),
+         -matches("^lp_")
+)
+
+## extract posterior draws and pivot longer
+posterior_long <- posterior_clean |> 
   pivot_longer(
     cols = everything(), 
     names_to = "Parameter", 
     values_to = "Value"
   )
 
-## filter out spline basis parameters
-
-posterior_fixed <- posterior_long |> 
-  filter(!grepl("^s\\(", Parameter))
-
-## computing 95% credible intervals
-
+# computing 95% credible intervals
 ci_df <- posterior_long |> 
   group_by(Parameter) |> 
   summarise(
@@ -164,9 +155,8 @@ ci_df <- posterior_long |>
     .groups = "drop"
   )
 
-## plotting the posterior samples (manual level)
-
-posterior_plot <- ggplot(posterior_fixed, aes(x = Value , fill = Parameter)) + 
+# Plot posterior distributions
+posterior_plot <- ggplot(posterior_long, aes(x = Value , fill = Parameter)) + 
   geom_density(alpha = 0.6) + 
   geom_vline(data = ci_df, aes(xintercept = lower), 
              linetype = "dashed", 
@@ -179,46 +169,42 @@ posterior_plot <- ggplot(posterior_fixed, aes(x = Value , fill = Parameter)) +
   labs(title = "Posterior Distributions of PM 2.5 with 95% Credible Intervals", 
        x = "Parameter Value", y = "Density")
 
-## visualizing the hourly/cyclic spline effect
+posterior_plot
+
+# Visualizing the hourly/cyclic spline effect
 
 # creating a fine grid of hours for prediction
 hour_grid <- tibble(
   hour = seq(0, 24, length.out = 100),
   temp_s = 0,
   rh_s = 0,
-  date = factor(1)  # add a dummy date to satisfy validate_data
-) |> 
+  date = NA
+  ) |>
   mutate(hour = 2 * pi * hour / 24)
 
-# Compute posterior predicted values for the spline (population-level only)
+# compute posterior predicted values for the spline (population-level only)
 hour_effect <- posterior_linpred(fit, newdata = hour_grid, re_formula = NA)
 
-# pivot long
-hour_long <- as_tibble(hour_effect) |> 
-  pivot_longer(
-    cols = everything(),
-    names_to = "hour_index",
-    values_to = "pred"
-  ) |> 
-  mutate(
-    hour_index = as.integer(hour_index),          # convert to integer
-    hour = hour_grid$hour[hour_index]            # assign correct hour
-  )
-
-# Summarize mean and 95% credible intervals
+# summarize mean and 95% credible intervals
 hour_summary <- as_tibble(hour_effect) |> 
-  mutate(hour = pull(hour_grid, hour)) |>   # adding hour column
-  summarise(
-    hour = hour, 
-    mean = apply(as.matrix(.), 2, mean),
-    lower = apply(as.matrix(.), 2, quantile, 0.025),
-    upper = apply(as.matrix(.), 2, quantile, 0.975)
-  )
+  summarise(across(everything(), list(
+    mean = ~mean(.),
+    lower = ~quantile(., 0.025),
+    upper = ~quantile(., 0.975)
+  ))) |> 
+  pivot_longer(
+    everything(), 
+    names_to = c("hour_idx", ".value"),
+    names_pattern = "(\\d+)_(.*)"
+  ) |> 
+  mutate(hour = hour_grid |> pull(hour))
 
-# Plot diurnal effect
-hour_plot <- ggplot(hour_summary, aes(x = hour, y = mean)) +
-  geom_line(color = "blue", size = 1) +
+# plot diurnal effect
+hour_plot <- 
+  ggplot(hour_summary, aes(x = hour * 24 / (2*pi), y = mean)) +
+  geom_line(color = "blue", linewidth = 1) +
   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, fill = "blue") +
+  scale_x_continuous(breaks = seq(0, 24, by = 6)) +
   theme_minimal() +
   labs(title = "Estimated Diurnal (Hourly) Effect on PM2.5",
        x = "Hour of Day", 
