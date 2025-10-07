@@ -131,7 +131,7 @@ pp_check(fit) # this compares obs vs. prediction of PM2.5
 
 # selecting the parameter columns we want
 posterior_clean <- as_draws_df(fit) |> 
-  select(-c(.chain, .iteration, .draw)) |>       # remove MCMC bookkeeping
+  select(-c(.chain, .iteration, .draw)) |>  # remove MCMC bookkeeping
   select(-matches("^sds_shour_"), 
          -matches("^s_shour_"),
          -matches("^lprior"),
@@ -169,7 +169,10 @@ posterior_plot <- ggplot(posterior_long, aes(x = Value , fill = Parameter)) +
   labs(title = "Posterior Distributions of PM 2.5 with 95% Credible Intervals", 
        x = "Parameter Value", y = "Density")
 
-posterior_plot
+ggsave("Posterior_dist.pdf", plot = posterior_plot,
+       width = 8,
+       height = 6)
+
 
 # Visualizing the hourly/cyclic spline effect
 
@@ -210,4 +213,6 @@ hour_plot <-
        x = "Hour of Day", 
        y = "PM2.5 effect")
 
-hour_plot
+ggsave("Diurnal_effects.pdf", plot = hour_plot,
+       width = 8,
+       height = 6)
