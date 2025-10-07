@@ -7,6 +7,8 @@ library(tidyverse)
 library(lubridate)
 library(dplyr)
 library(ggplot2)
+library(leaflet)
+library(leaflet.extras2)
 
 # listing all csv files
 files <- list.files(
@@ -19,7 +21,7 @@ all_data <- files |>
 
 #selecting key columns
 all_data<- all_data |> 
-  select(datetime_local, location_id, location_name, parameter, value)
+  select(datetime_local, location_id, latitude, longitude, location_name, parameter, value)
 
 # ensuring date time is in proper format
 all_data <- all_data |> 
@@ -43,8 +45,8 @@ pm25_hourly <- nyc_pm25_data |>
     date = as.Date(datetime),
     hour = as.numeric(format(datetime, "%H"))
   ) |> 
-  group_by(name, date, hour) |>
-  summarize(pm25_hourly = mean(pm25, na.rm = TRUE), .groups = "drop") |>
+  group_by(latitude, longitude, name, date, hour) |>
+  summarize(pm25_value = mean(pm25, na.rm = TRUE), .groups = "drop") |>
   mutate(name = recode(name,
                        "Morrisania" = "Morrisania, Bronx",
                        "Manhattan/IS143" = "Washington Heights, Man", 
@@ -89,6 +91,63 @@ heatmap_by_date <-
 ggsave("Heatmap_by_date.pdf", plot = heatmap_by_date,
        width = 11, 
        height = 12)
+
+# looking more at pm25 by location
+pm25_hourly |> 
+  ggplot(aes(
+    x = latitude, y = longitude, color = pm25_value)) +
+  geom_point()
+
+# Creating a spatiotemporal visualization
+
+# ensure that hour is numeric
+pm25_hourly <- pm25_hourly |> 
+  mutate(hour = as.integer(hour))
+
+# color palette
+pal <- colorNumeric(
+  palette = "viridis",
+  domain = pm25_hourly$pm25_value,
+  na.color = "transparent"
+)
+
+# preparing leaflet map
+pm25_map <- leaflet() |> 
+  addProviderTiles(providers$CartoDB.Positron)
+
+# creating separate layers per hour 
+pm25_hourly |> 
+  group_by(hour) |> 
+  group_map(~{
+    pm25_map <<- pm25_map |> 
+    addCircleMarkers(
+      data = .x,
+      ~longitude, ~latitude,
+      radius = ~scales::rescale(.x$pm25_value, to = c(4, 12)),
+      color = ~pal(.x$pm25_value),
+      stroke = FALSE,
+      fillOpacity = 0.8,
+      label = ~paste0(
+        .x$name, "<br>PM2.5: ", 
+        round(.x$pm25_value, 1), 
+        " µg/m³<br>Hour: ", .x$hour),
+      group = paste0("hour_", unique(.x$hour))
+    )
+  })
+
+# creating legend
+pm25_map <- pm25_map |> 
+  addLegend(
+    "bottomright",
+     pal = pal,
+     values = pm25_hourly$pm25_value,
+     title = "PM2.5 ((µg/m³)",
+     opacity = 1)
+
+# adding a time slider
+pm25_map <- pm25_map |> 
+  addTimeslider()
+
 
 # creating a heatmap on average hourly pm2.5
 heatmap_hourly <- 
