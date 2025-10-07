@@ -1,4 +1,4 @@
-## Animated Map of PM 2.5 concentrations acros neighborhoods
+## Animated Map of PM 2.5 concentrations across neighborhoods
 ## Brooklyn, Manhattan, & The Bronx
 ## Maya Arnott
 
@@ -22,7 +22,9 @@ all_data <- files |>
 
 #selecting key columns
 all_data<- all_data |> 
-  select(datetime_local, location_id, latitude, longitude, location_name, parameter, value)
+  select(datetime_local, location_id, 
+         latitude, longitude, 
+         location_name, parameter, value)
 
 # ensuring date time is in proper format
 all_data <- all_data |> 

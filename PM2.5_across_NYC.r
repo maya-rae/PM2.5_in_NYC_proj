@@ -63,8 +63,8 @@ pm25_hourly <- nyc_pm25_data |>
 heatmap_by_date <- 
   ggplot(pm25_hourly, aes(
   x = hour, 
-  y = fct_reorder(name, pm25_hourly, .fun = max), 
-    fill = pm25_hourly
+  y = fct_reorder(name, pm25_value, .fun = max), 
+    fill = pm25_value
   )) +
   geom_tile(color = "white") + 
     scale_fill_viridis_c(option = "inferno", name = "PM2.5 (µg/m³)") + 
@@ -98,60 +98,10 @@ pm25_hourly |>
     x = latitude, y = longitude, color = pm25_value)) +
   geom_point()
 
-# Creating a spatiotemporal visualization
-
-# ensure that hour is numeric
-pm25_hourly <- pm25_hourly |> 
-  mutate(hour = as.integer(hour))
-
-# color palette
-pal <- colorNumeric(
-  palette = "viridis",
-  domain = pm25_hourly$pm25_value,
-  na.color = "transparent"
-)
-
-# preparing leaflet map
-pm25_map <- leaflet() |> 
-  addProviderTiles(providers$CartoDB.Positron)
-
-# creating separate layers per hour 
-pm25_hourly |> 
-  group_by(hour) |> 
-  group_map(~{
-    pm25_map <<- pm25_map |> 
-    addCircleMarkers(
-      data = .x,
-      ~longitude, ~latitude,
-      radius = ~scales::rescale(.x$pm25_value, to = c(4, 12)),
-      color = ~pal(.x$pm25_value),
-      stroke = FALSE,
-      fillOpacity = 0.8,
-      label = ~paste0(
-        .x$name, "<br>PM2.5: ", 
-        round(.x$pm25_value, 1), 
-        " µg/m³<br>Hour: ", .x$hour),
-      group = paste0("hour_", unique(.x$hour))
-    )
-  })
-
-# creating legend
-pm25_map <- pm25_map |> 
-  addLegend(
-    "bottomright",
-     pal = pal,
-     values = pm25_hourly$pm25_value,
-     title = "PM2.5 ((µg/m³)",
-     opacity = 1)
-
-# adding a time slider
-pm25_map <- pm25_map |> 
-  addTimeslider()
-
 
 # creating a heatmap on average hourly pm2.5
 heatmap_hourly <- 
-  ggplot(pm25_hourly, aes(x = hour, y = name, fill = pm25_hourly)) + 
+  ggplot(pm25_hourly, aes(x = hour, y = name, fill = pm25_value)) + 
   geom_tile(color = "white") + 
   scale_fill_viridis_c(option = "inferno", name = "PM2.5 (µg/m³)") + 
   labs(
