@@ -138,5 +138,4 @@ observe({
 
 shinyApp(ui, server)
 
-rsconnect::deployApp("Desktop/PM2.5_in_NYC_proj/pm25animation.r")
 
