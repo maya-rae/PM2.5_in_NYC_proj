@@ -1,0 +1,10 @@
+name: pm25_in_nyc_proj
+title:
+username: mlzor9-maya-arnott
+account: mlzor9-maya-arnott
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 15688742
+bundleId: 11005826
+url: https://mlzor9-maya-arnott.shinyapps.io/pm25_in_nyc_proj/
+version: 1

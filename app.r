@@ -10,7 +10,6 @@ library(shiny)
 library(leaflet)
 library(dplyr)
 library(scales)
-library(rsconnect)
 
 # listing all csv files
 files <- list.files(
