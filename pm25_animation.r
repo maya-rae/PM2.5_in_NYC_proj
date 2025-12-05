@@ -10,6 +10,7 @@ library(shiny)
 library(leaflet)
 library(dplyr)
 library(scales)
+library(sf)
 
 # listing all csv files
 files <- list.files(
@@ -61,11 +62,29 @@ pm25_hourly <- nyc_pm25_data |>
                        "7th Ave and W 16th St" =  "Chelsea, Man",
                        "DropHome" = "Lincoln Square, Man"))
 
+# rename 'hour' column for readability in code
+
+pm25_hourly <- pm25_hourly |> 
+  rename(hour_of_day = hour)
+
+
+# Adding traffic counts
+
+traffic_sf <- nyc_traffic |> 
+  mutate(geometry = st_as_sfc(wkt_geom)) |> 
+  st_as_sf(crs = 2263) |>             # assign NY State Plane (ft)
+  st_transform(4326)                  # convert to lat/long
+
+# extract coordinates cleanly
+coords <- st_coordinates(traffic_sf)
+traffic_sf$longitude <- coords[, 1]
+traffic_sf$latitude  <- coords[, 2]
+
 # Creating a spatiotemporal visualization
 
 # ensure that hour is numeric
 pm25_hourly <- pm25_hourly |> 
-  mutate(hour = as.integer(hour))
+  mutate(hour_of_day = as.integer(hour_of_day))
 
 # color palette
 pal <- colorNumeric(
@@ -81,9 +100,9 @@ ui <- fluidPage(
   sliderInput(
               inputId = "hour",
               label = "Hour of Day", 
-              min = min(pm25_hourly$hour),
-              max = max(pm25_hourly$hour),
-              value = min(pm25_hourly$hour),
+              min = min(pm25_hourly$hour_of_day),
+              max = max(pm25_hourly$hour_of_day),
+              value = min(pm25_hourly$hour_of_day),
               step = 1,
               animate = animationOptions(interval = 1000,
                                          loop = TRUE)
@@ -91,47 +110,72 @@ ui <- fluidPage(
   leafletOutput("pm25_map", height = 600)
 )
 
-
 # Defining server
 
 server <- function(input, output, session) {
   
-  # initialize map with all the hour layers
+  # make sure traffic_counts exists and has lat/lon
+  if (!exists("traffic_sf")) {
+    stop("traffic_sf data frame not found in the global environment")
+  }
+  
   output$pm25_map <- renderLeaflet({
     leaflet(pm25_hourly) |> 
-      addProviderTiles(providers$CartoDB.Positron) |> 
+      addProviderTiles(providers$CartoDB.Positron) |>
+      
+      # PM2.5 markers by hour (one group per hour)
       addCircleMarkers(
         ~longitude, ~latitude,
         radius = ~rescale(pm25_value, to = c(4, 12)),
         color = ~pal(pm25_value),
         stroke = FALSE,
         fillOpacity = 0.8,
-        label = ~paste0(name, "<br>PM2.5: ", 
-                       round(pm25_value, 1),
-                       " µg/m³<br>Hour: ", hour),
-        group = ~paste0("hour_", hour),
+        label = ~paste0(name, "<br>PM2.5: ", round(pm25_value, 1),
+                        " µg/m³<br>Hour: ", hour_of_day),
+        group = ~paste0("hour_", hour_of_day)
       ) |>
-    addLegend(
-      "bottomright",
-      pal = pal,
-      values = ~pm25_value,
-      title = "PM2.5 (µg/m³)",
-      opacity = 1
-    ) |> 
-      # hide all layers initially
-      hideGroup(paste0("hour_", unique(pm25_hourly$hour)))
-})
-
-# observe slider and show the selected hour only
-observe({
-  selected_hour <- input$hour
-  # hide all layers first
-  leafletProxy("pm25_map") |> 
-    hideGroup(paste0("hour_", unique(pm25_hourly$hour))) |> 
-  # show only selected hour
-    showGroup(paste0("hour_", selected_hour))
+      
+      # Traffic count points as a separate layer
+      addCircleMarkers(
+        data = traffic_sf,
+        lng = ~longitude, lat = ~latitude,
+        radius = 4,
+        color = "red",
+        stroke = FALSE,
+        fillOpacity = 0.7,
+        label = ~paste0("Traffic Site<br>Count: ", vol),
+        group = "Traffic Counts"
+      ) |>
+      
+      # Legend for PM2.5
+      addLegend(
+        "bottomright",
+        pal = pal,
+        values = pm25_hourly$pm25_value,
+        title = "PM2.5 (µg/m³)",
+        opacity = 1
+      ) |>
+      
+      # Layers control so users can toggle traffic + hour groups
+      addLayersControl(
+        overlayGroups = c(paste0("hour_", sort(unique(pm25_hourly$hour_of_day))),
+                          "Traffic Counts"),
+        options = layersControlOptions(collapsed = FALSE)
+      ) |>
+      
+      # hide all PM2.5 hour groups initially
+      hideGroup(paste0("hour_", sort(unique(pm25_hourly$hour_of_day))))
+  })
+  
+  # observe slider and show the selected hour only
+  observe({
+    selected_hour <- input$hour
+    leafletProxy("pm25_map") |> 
+      hideGroup(paste0("hour_", sort(unique(pm25_hourly$hour_of_day)))) |> 
+      showGroup(paste0("hour_", selected_hour))
   })
 }
+
 
 # Running shiny
 

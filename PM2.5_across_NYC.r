@@ -1,7 +1,8 @@
-## Heatmap of PM 2.5 concentrations acros neighborhoods
+## Heatmap of PM 2.5 concentrations across neighborhoods
 ## Brooklyn, Manhattan, & The Bronx
 ## Maya Arnott
 
+# account for traffic counts + bad weather days
 # importing libraries
 library(tidyverse)
 library(lubridate)
@@ -19,8 +20,8 @@ all_data <- files |>
   map_dfr(read_csv) |> 
   janitor::clean_names()
 
-#selecting key columns
-all_data<- all_data |> 
+# selecting key columns
+all_data <- all_data |> 
   select(datetime_local, location_id, latitude, longitude, location_name, parameter, value)
 
 # ensuring date time is in proper format
