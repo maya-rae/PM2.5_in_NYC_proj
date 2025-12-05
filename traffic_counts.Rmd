@@ -1,0 +1,108 @@
+---
+title: "traffic_data_html"
+author: "Maya Arnott"
+date: "2025-10-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(rvest)
+library(httr)
+library(sf)
+```
+
+In my pm2.5 bayesian r script file, I assess how well standarized temperature, standarized relative humidity, and a cyclic spline over the hour of the day can predict the response variable particulate matter 2.5 concentration. 
+
+In my Bayesian model, I run a posterior predictive check to compare thew simulated values to the observed values from Open AQ.
+
+I compute 95% credible intervals for each parameter described above. I create a faceted
+density plot of the posterior distributions for each parameter, with the 95% credible intervals marked by the red dashed lines.  
+
+I also visualize the diurnal (hourly) effect by creating a prediction grid and predicting from the posterior linear predictor I made. We can't credibly claim that the hour of the day has a meaningful independent effect on PM 2.5.  
+
+```{r}
+brm(pm25 ~ s(hour, bs = "cc", k = 10), data = combined_data)
+```
+
+
+
+Import traffic data from NYC gov
+
+```{r}
+nyc_traffic = 
+read_csv("data/Automated_Traffic_Volume_Counts_20251014.csv") |> 
+  janitor::clean_names()
+```
+
+Plot data initially
+
+```{r}
+  ggplot(nyc_traffic, aes(
+    x = hh,
+    y = vol,
+    color = street
+    )) + 
+  geom_point(alpha = 0.6, size = 1.3) +
+  geom_smooth(se = FALSE, method = "loess", size = 1) +
+  facet_wrap(~boro, scales = "fixed") +
+  scale_color_viridis_d(
+    option = "magma", begin = 0.2, end = 0.8) +
+  labs(
+    title = "Traffic Volume in 15 minute intervals across NYC",
+    x = "Hour of Day",
+    y = "Traffic Counts (15 min intervals)",
+    color = "Street"
+  ) + 
+  theme_minimal()
+  
+```
+
+Aggregating data ot match PM2.5 hourly averages
+```{r}
+traffic_clean <- nyc_traffic |> 
+  mutate(
+    datetime = make_datetime(yr, m, d, hh, mm),
+    hour = floor_date(datetime, "hour")
+  ) |> 
+  group_by(request_id, boro, hh) |> 
+  summarize(
+    traffic_count = mean(vol, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+transform nyc_traffic into long/lat points
+```{r}
+traffic_sf <- nyc_traffic |> 
+  mutate(geometry = st_as_sfc(wkt_geom)) |> 
+  st_as_sf(crs= 2263) # assigns NY state plane coordinate system
+
+#transform to lat/long for easy mapping
+traffic_sf <- st_transform(traffic_sf, 4326)
+```
+
+```{r}
+ggplot() +
+  geom_sf(data = traffic_sf, color = "red", size = 2, alpha = 0.6) +
+  theme_minimal() +
+  labs(title = "Traffic Count Locations",
+       subtitle = "NYC Traffic Sensor Points")
+```
+
+add the pm 2.5 sites to the sensor point map
+```{r}
+pm25_sf <- pm25_hourly |> 
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+           
+ggplot() +
+  geom_sf(data = pm25_sf, color = "blue", size = 2, alpha = 0.7) +
+  geom_sf(data = traffic_sf, color = "red", size = 1.5, alpha = 0.5) +
+  theme_minimal() +
+  labs(title = "Traffic Count and PM 2.5 Site Locations",
+       subtitle = "Blue = PM2.5 sites | Red = Traffic counts")
+  
+```
+
+

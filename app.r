@@ -61,7 +61,39 @@ pm25_hourly <- nyc_pm25_data |>
                        "7th Ave and W 16th St" =  "Chelsea, Man",
                        "DropHome" = "Lincoln Square, Man"))
 
-# Creating a spatiotemporal visualization
+# computing the daily mean for each site
+pm25_daily <- nyc_pm25_data |> 
+  group_by(name, date) |> 
+  summarize(daily_avg_pm25 = mean(pm25, na.rm = TRUE), .groups = "drop") |> 
+  mutate(name = recode(name,
+                       "Morrisania" = "Morrisania, Bronx",
+                       "Manhattan/IS143" = "Washington Heights, Man", 
+                       "E Houston St between Clinton St & Attorney St" = "Lower East Side, Man",
+                       "CCNY" = "West Harlem, Man",
+                       "Bronx - IS74" = "Hunts Point, Bronx", 
+                       "Bronx - IS52" =  "Longwood, Bronx",
+                       "Bklyn - PS274" = "Bushwick, Bklyn",
+                       "Bklyn - PS 314" = "Bay Ridge, Bklyn",
+                       "7th Ave and W 16th St" =  "Chelsea, Man",
+                       "DropHome" = "Lincoln Square, Man"))
+ 
+
+# creating a daily trend plot
+daily_plot <- pm25_daily |> 
+  ggplot(aes(x = date, y = daily_avg_pm25, color = name)) +
+  geom_line() + 
+  labs(
+    title = "Daily Average PM2.5 per Neighborhood",
+    x = "Date",
+    y = "PM2.(µg/5 m³)",
+    color = "Neighborhood", 
+    caption = "Data was obtained from Openaq and includes PM2.5 levels 
+      during the 2025 summer months from June to August."
+  ) +
+  theme_minimal()
+
+
+# creating a spatiotemporal visualization
 
 # ensure that hour is numeric
 pm25_hourly <- pm25_hourly |> 
@@ -88,7 +120,9 @@ ui <- fluidPage(
               animate = animationOptions(interval = 1000,
                                          loop = TRUE)
   ),
-  leafletOutput("pm25_map", height = 600)
+  leafletOutput("pm25_map", height = 600),
+  hr(), 
+  plotOutput("daily_plot", height = 300)
 )
 
 
@@ -131,7 +165,25 @@ observe({
   # show only selected hour
     showGroup(paste0("hour_", selected_hour))
   })
+
+# render the daily avg pm2.5 plot
+output$daily_plot <- renderPlot({
+  pm25_daily |> 
+    ggplot(aes(x = date, y = daily_avg_pm25, color = name)) +
+    geom_line() + 
+    labs(
+      title = "Daily Average PM2.5 per Neighborhood",
+      x = "Date",
+      y = "PM2.(µg/5 m³)",
+      color = "Neighborhood", 
+      caption = "Data was obtained from Openaq and includes PM2.5 levels 
+      during the 2025 summer months from June to August."
+    ) +
+    theme_minimal()
+})
 }
+
+
 
 # Running shiny
 
