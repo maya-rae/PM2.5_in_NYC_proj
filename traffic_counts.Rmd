@@ -15,17 +15,15 @@ library(sf)
 
 In my pm2.5 bayesian r script file, I assess how well standarized temperature, standarized relative humidity, and a cyclic spline over the hour of the day can predict the response variable particulate matter 2.5 concentration. 
 
-In my Bayesian model, I run a posterior predictive check to compare thew simulated values to the observed values from Open AQ.
+In my Bayesian model, I run a posterior predictive check to compare the simulated values to the observed values from Open AQ.
 
-I compute 95% credible intervals for each parameter described above. I create a faceted
-density plot of the posterior distributions for each parameter, with the 95% credible intervals marked by the red dashed lines.  
+I compute 95% credible intervals for each parameter described above and created a density plot of the posterior distributions for each parameter, with the 95% credible intervals marked by the red dashed lines.  
 
 I also visualize the diurnal (hourly) effect by creating a prediction grid and predicting from the posterior linear predictor I made. We can't credibly claim that the hour of the day has a meaningful independent effect on PM 2.5.  
 
 ```{r}
 brm(pm25 ~ s(hour, bs = "cc", k = 10), data = combined_data)
 ```
-
 
 
 Import traffic data from NYC gov
@@ -59,7 +57,7 @@ Plot data initially
   
 ```
 
-Aggregating data ot match PM2.5 hourly averages
+Aggregating data to match PM2.5 hourly averages
 ```{r}
 traffic_clean <- nyc_traffic |> 
   mutate(
@@ -97,11 +95,11 @@ pm25_sf <- pm25_hourly |>
   st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
            
 ggplot() +
-  geom_sf(data = pm25_sf, color = "blue", size = 2, alpha = 0.7) +
+  geom_sf(data = pm25_sf, aes(color = name), size = 2, alpha = 0.7) +
   geom_sf(data = traffic_sf, color = "red", size = 1.5, alpha = 0.5) +
   theme_minimal() +
   labs(title = "Traffic Count and PM 2.5 Site Locations",
-       subtitle = "Blue = PM2.5 sites | Red = Traffic counts")
+       subtitle = "Red = Traffic counts")
   
 ```
 
